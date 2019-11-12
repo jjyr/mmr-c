@@ -69,10 +69,49 @@ int merkle_proof() {
   _assert(ret == 0);
   return 0;
 }
+
+int compute_new_root_from_merkle_proof() {
+  uint8_t item[] = {
+      5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+      0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+  };
+  MMRSizePos item_pos = compute_pos_by_leaf_index(5);
+  uint64_t mmr_size = 10;
+  uint64_t proof_len = 2;
+  uint8_t proof_items[][HASH_SIZE] = {
+      {
+          4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+          0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+      },
+      {
+          15,  87,  63,  191, 31,  182, 148, 82,  116, 16, 32,
+          65,  52,  177, 93,  104, 209, 186, 100, 50,  84, 22,
+          199, 173, 150, 238, 133, 217, 94,  61,  66,  60,
+      },
+  };
+  uint8_t next_root[] = {
+      220, 66,  69,  25,  60,  142, 221, 129, 22,  214, 67,
+      112, 63,  184, 123, 163, 53,  43,  227, 129, 16,  110,
+      148, 240, 148, 158, 67,  103, 152, 100, 71,  134,
+  };
+  uint8_t new_root[HASH_SIZE];
+  uint8_t new_item[] = {
+      6, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+      0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+  };
+  MMRSizePos new_item_pos = compute_pos_by_leaf_index(6);
+  compute_new_root_from_last_leaf_proof(new_root, mmr_size, item, item_pos.pos,
+                                        proof_items, proof_len, new_item,
+                                        new_item_pos);
+  int ret = memcmp(new_root, next_root, HASH_SIZE);
+  _assert(ret == 0);
+  return 0;
+}
 /* end unit tests */
 
 int all_tests() {
   _verify(merkle_proof);
+  _verify(compute_new_root_from_merkle_proof);
   return 0;
 }
 

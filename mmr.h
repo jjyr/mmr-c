@@ -312,7 +312,7 @@ void compute_new_root_from_last_leaf_proof(
     for (int j = i; j < proof_len; j++) {
       memcpy(proof[j - i + 1], proof[j], HASH_SIZE);
     }
-    proof_len -= i;
+    proof_len = proof_len + 1 - i;
     compute_proof_root(root_hash, new_leaf_pos.mmr_size, new_leaf_hash,
                        new_leaf_pos.pos, proof, proof_len);
   }

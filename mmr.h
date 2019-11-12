@@ -7,11 +7,12 @@
  */
 
 #ifndef MMR_H
-#define HHR_H
+#define MMR_H
 
 #include "assert.h"
 #include "blake2b.h"
 #include "stddef.h"
+#include "stdlib.h"
 #include "string.h"
 
 #define HASH_SIZE 32
@@ -79,8 +80,9 @@ Peaks get_peaks(uint64_t mmr_size) {
   HeightPos left_peak = left_peak_height_pos(mmr_size);
   uint32_t height = left_peak.height;
   uint64_t pos = left_peak.pos;
-  uint64_t poss[height];
+  uint64_t *poss = malloc(sizeof(uint64_t) * height);
   size_t i = 0;
+  poss[i++] = pos;
   while (height > 0) {
     HeightPos peak = get_right_peak(height, pos, mmr_size);
     /* no more right peak */
@@ -101,20 +103,23 @@ Peaks get_peaks(uint64_t mmr_size) {
 int binary_search(uint64_t *arr, size_t len, uint64_t target) {
   if (len == 0) {
     return -1;
-  } else if (len == 1 && arr[0] == target) {
-    return 0;
   }
   int b = 0;
-  int e = len - 1;
-  while (b != e) {
+  int e = len;
+  while (b + 1 != e) {
     int i = (b + e) / 2;
     if (arr[i] < target) {
-      e = i;
-    } else if (arr[i] > target) {
       b = i;
+    } else if (arr[i] > target) {
+      e = i;
     } else {
       return i;
     }
+  }
+  if (arr[b] == target) {
+    return b;
+  } else if (e < len && arr[e] == target) {
+    return e;
   }
   return -1;
 }
@@ -314,4 +319,3 @@ void compute_new_root_from_last_leaf_proof(
 }
 
 #endif
-

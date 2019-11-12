@@ -11,7 +11,6 @@
 
 #include "assert.h"
 #include "stddef.h"
-#include "stdlib.h"
 #include "string.h"
 
 #define HASH_SIZE 32
@@ -75,17 +74,18 @@ HeightPos left_peak_height_pos(uint64_t mmr_size) {
   return p;
 }
 
-Peaks get_peaks(uint64_t mmr_size) {
+/* peaks_buf should at least equals to left_peak.height, to make sure we have
+ * enough buf to store peaks.
+ */
+Peaks get_peaks(uint64_t *peaks_buf, HeightPos left_peak, uint64_t mmr_size) {
   /* After a little thought we can figure out the number of peaks will never
    * greater than MMR height
    * https://github.com/nervosnetwork/merkle-mountain-range#construct
    */
-  HeightPos left_peak = left_peak_height_pos(mmr_size);
   uint32_t height = left_peak.height;
   uint64_t pos = left_peak.pos;
-  uint64_t *poss = malloc(sizeof(uint64_t) * height);
   size_t i = 0;
-  poss[i++] = pos;
+  peaks_buf[i++] = pos;
   while (height > 0) {
     HeightPos peak = get_right_peak(height, pos, mmr_size);
     /* no more right peak */
@@ -94,9 +94,9 @@ Peaks get_peaks(uint64_t mmr_size) {
     }
     height = peak.height;
     pos = peak.pos;
-    poss[i++] = pos;
+    peaks_buf[i++] = pos;
   }
-  struct Peaks peaks = {poss, i};
+  struct Peaks peaks = {peaks_buf, i};
   return peaks;
 }
 
@@ -253,7 +253,9 @@ void compute_proof_root(VerifyContext *ctx, uint8_t root_hash[HASH_SIZE],
                         uint64_t mmr_size, uint8_t leaf_hash[HASH_SIZE],
                         uint64_t pos, uint8_t proof[][HASH_SIZE],
                         size_t proof_len) {
-  struct Peaks peaks = get_peaks(mmr_size);
+  HeightPos left_peak = left_peak_height_pos(mmr_size);
+  uint64_t peaks_buf[left_peak.height];
+  struct Peaks peaks = get_peaks(peaks_buf, left_peak, mmr_size);
   // start from leaf_hash
   memcpy(root_hash, leaf_hash, HASH_SIZE);
   // calculate peak's merkle root
@@ -306,7 +308,9 @@ void compute_new_root_from_last_leaf_proof(
      * 2. use peak's root and remain proof as new_proof, then compute_proof_root
      */
     assert(mmr_size + 1 == new_leaf_pos.mmr_size);
-    struct Peaks peaks = get_peaks(mmr_size);
+    HeightPos left_peak = left_peak_height_pos(mmr_size);
+    uint64_t peaks_buf[left_peak.height];
+    struct Peaks peaks = get_peaks(peaks_buf, left_peak, mmr_size);
     // start from leaf_hash
     memcpy(root_hash, leaf_hash, HASH_SIZE);
     size_t i =

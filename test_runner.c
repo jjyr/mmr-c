@@ -70,7 +70,7 @@ int merkle_proof() {
   return 0;
 }
 
-int compute_new_root_from_merkle_proof() {
+int compute_new_root_from_proof_6() {
   uint8_t item[] = {
       5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
       0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -107,11 +107,50 @@ int compute_new_root_from_merkle_proof() {
   _assert(ret == 0);
   return 0;
 }
+
+int compute_new_root_from_proof_7() {
+  uint8_t item[] = {
+      6, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+      0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+  };
+  MMRSizePos item_pos = compute_pos_by_leaf_index(6);
+  uint64_t mmr_size = 11;
+  uint64_t proof_len = 2;
+  uint8_t proof_items[][HASH_SIZE] = {
+      {
+          169, 85, 202, 90,  73,  91,  221, 22,  127, 98,  83,
+          191, 25, 14,  230, 209, 177, 42,  195, 90,  147, 115,
+          37,  90, 161, 179, 166, 152, 202, 100, 45,  75,
+      },
+      {
+          15,  87,  63,  191, 31,  182, 148, 82,  116, 16, 32,
+          65,  52,  177, 93,  104, 209, 186, 100, 50,  84, 22,
+          199, 173, 150, 238, 133, 217, 94,  61,  66,  60,
+      },
+  };
+  uint8_t next_root[] = {
+      47,  5,  175, 44, 42,  42,  94, 157, 107, 239, 26, 221, 232, 39, 116, 135,
+      229, 83, 136, 65, 138, 200, 39, 214, 44,  239, 18, 168, 105, 85, 234, 5,
+  };
+  uint8_t new_root[HASH_SIZE];
+  uint8_t new_item[] = {
+      7, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+      0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+  };
+  MMRSizePos new_item_pos = compute_pos_by_leaf_index(7);
+  compute_new_root_from_last_leaf_proof(new_root, mmr_size, item, item_pos.pos,
+                                        proof_items, proof_len, new_item,
+                                        new_item_pos);
+  int ret = memcmp(new_root, next_root, HASH_SIZE);
+  _assert(ret == 0);
+  return 0;
+}
 /* end unit tests */
 
 int all_tests() {
   _verify(merkle_proof);
-  _verify(compute_new_root_from_merkle_proof);
+  _verify(compute_new_root_from_proof_6);
+  _verify(compute_new_root_from_proof_7);
   return 0;
 }
 

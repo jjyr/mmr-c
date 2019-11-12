@@ -6,7 +6,10 @@ Merkle mountain range in C.
 
 In currently implementation only merkle proof verification is supported.
 
-# LICENSE
+## LICENSE
 
 MIT
 
+## AUTHOR
+
+Jiang Jinyang <jjyruby@gmail.com>

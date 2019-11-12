@@ -10,7 +10,6 @@
 #define MMR_H
 
 #include "assert.h"
-#include "blake2b.h"
 #include "stddef.h"
 #include "stdlib.h"
 #include "string.h"
@@ -18,6 +17,10 @@
 #define HASH_SIZE 32
 
 /* types */
+typedef struct VerifyContext {
+  void (*merge)(uint8_t *dst, uint8_t *right, uint8_t *left);
+} VerifyContext;
+
 typedef struct Peaks {
   uint64_t *peaks;
   size_t len;
@@ -158,15 +161,6 @@ uint32_t pos_height_in_tree(uint64_t pos) {
   return 64 - count_zeros(pos, 1) - 1;
 }
 
-void merge_hash(blake2b_state *blake2b_ctx, uint8_t dst[HASH_SIZE],
-                uint8_t left_hash[HASH_SIZE], uint8_t right_hash[HASH_SIZE]) {
-  blake2b_init(blake2b_ctx, HASH_SIZE);
-  blake2b_update(blake2b_ctx, left_hash, HASH_SIZE);
-  blake2b_update(blake2b_ctx, right_hash, HASH_SIZE);
-  blake2b_final(blake2b_ctx, dst, HASH_SIZE);
-  return;
-}
-
 static uint64_t simple_log2(uint64_t n) {
   unsigned int res = 0;
   while (n >>= 1)
@@ -211,12 +205,12 @@ MMRSizePos compute_pos_by_leaf_index(uint64_t index) {
   }
 }
 
-static size_t compute_peak_root(uint8_t peak_hash[HASH_SIZE], Peaks peaks,
+static size_t compute_peak_root(VerifyContext *ctx,
+                                uint8_t peak_hash[HASH_SIZE], Peaks peaks,
                                 uint64_t *pos, uint8_t proof[][HASH_SIZE],
                                 size_t proof_len) {
   size_t i = 0;
   uint32_t height = 0;
-  blake2b_state blake2b_ctx;
   // calculate peak's merkle root
   // return if pos reach a peak pos
   while (1) {
@@ -232,11 +226,11 @@ static size_t compute_peak_root(uint8_t peak_hash[HASH_SIZE], Peaks peaks,
     if (next_height > pos_height) {
       // we are on right branch
       *pos += 1;
-      merge_hash(&blake2b_ctx, peak_hash, pitem, peak_hash);
+      ctx->merge(peak_hash, pitem, peak_hash);
     } else {
       // we are on left branch
       *pos += parent_offset(height);
-      merge_hash(&blake2b_ctx, peak_hash, peak_hash, pitem);
+      ctx->merge(peak_hash, peak_hash, pitem);
     }
     height += 1;
   }
@@ -245,30 +239,39 @@ static size_t compute_peak_root(uint8_t peak_hash[HASH_SIZE], Peaks peaks,
 
 /* MMR API */
 
+/* Initialize VerifyContext */
+
+int initialize_verify_context(VerifyContext *ctx,
+                              void(merge)(uint8_t *dst, uint8_t *right,
+                                          uint8_t *left)) {
+  ctx->merge = merge;
+  return 0;
+}
+
 /* compute root from merkle proof */
-void compute_proof_root(uint8_t root_hash[HASH_SIZE], uint64_t mmr_size,
-                        uint8_t leaf_hash[HASH_SIZE], uint64_t pos,
-                        uint8_t proof[][HASH_SIZE], size_t proof_len) {
+void compute_proof_root(VerifyContext *ctx, uint8_t root_hash[HASH_SIZE],
+                        uint64_t mmr_size, uint8_t leaf_hash[HASH_SIZE],
+                        uint64_t pos, uint8_t proof[][HASH_SIZE],
+                        size_t proof_len) {
   struct Peaks peaks = get_peaks(mmr_size);
   // start from leaf_hash
   memcpy(root_hash, leaf_hash, HASH_SIZE);
   // calculate peak's merkle root
-  size_t i = compute_peak_root(root_hash, peaks, &pos, proof, proof_len);
+  size_t i = compute_peak_root(ctx, root_hash, peaks, &pos, proof, proof_len);
 
   // bagging peaks
   // bagging with left peaks if pos is last peak(last pos)
-  blake2b_state blake2b_ctx;
   int bagging_left = pos == mmr_size - 1;
   while (i < proof_len) {
     uint8_t *pitem = proof[i++];
     if (bagging_left) {
-      merge_hash(&blake2b_ctx, root_hash, root_hash, pitem);
+      ctx->merge(root_hash, root_hash, pitem);
     } else {
       // we are not in the last peak, so bag with right peaks first
       // notice the right peaks is already bagging into one hash in proof,
       // so after this merge, the remain proofs are always left peaks.
       bagging_left = 1;
-      merge_hash(&blake2b_ctx, root_hash, pitem, root_hash);
+      ctx->merge(root_hash, pitem, root_hash);
     }
   }
   return;
@@ -281,7 +284,7 @@ void compute_proof_root(uint8_t root_hash[HASH_SIZE], uint64_t mmr_size,
  * possible. https://github.com/jjyr/merkle-mountain-range#construct
  */
 void compute_new_root_from_last_leaf_proof(
-    uint8_t root_hash[HASH_SIZE], uint64_t mmr_size,
+    VerifyContext *ctx, uint8_t root_hash[HASH_SIZE], uint64_t mmr_size,
     uint8_t leaf_hash[HASH_SIZE], uint64_t leaf_pos, uint8_t proof[][HASH_SIZE],
     size_t proof_len, uint8_t new_leaf_hash[HASH_SIZE],
     MMRSizePos new_leaf_pos) {
@@ -295,7 +298,7 @@ void compute_new_root_from_last_leaf_proof(
     for (int i = 0; i < proof_len; i++) {
       memcpy(new_proof[i + 1], proof[i], HASH_SIZE);
     }
-    compute_proof_root(root_hash, new_leaf_pos.mmr_size, new_leaf_hash,
+    compute_proof_root(ctx, root_hash, new_leaf_pos.mmr_size, new_leaf_hash,
                        new_leaf_pos.pos, new_proof, proof_len + 1);
   } else {
     /* new leaf on left branch
@@ -306,14 +309,15 @@ void compute_new_root_from_last_leaf_proof(
     struct Peaks peaks = get_peaks(mmr_size);
     // start from leaf_hash
     memcpy(root_hash, leaf_hash, HASH_SIZE);
-    size_t i = compute_peak_root(root_hash, peaks, &leaf_pos, proof, proof_len);
+    size_t i =
+        compute_peak_root(ctx, root_hash, peaks, &leaf_pos, proof, proof_len);
     /* set peak's root and remain proof as new_proof */
     memcpy(proof[0], root_hash, HASH_SIZE);
     for (int j = i; j < proof_len; j++) {
       memcpy(proof[j - i + 1], proof[j], HASH_SIZE);
     }
     proof_len = proof_len + 1 - i;
-    compute_proof_root(root_hash, new_leaf_pos.mmr_size, new_leaf_hash,
+    compute_proof_root(ctx, root_hash, new_leaf_pos.mmr_size, new_leaf_hash,
                        new_leaf_pos.pos, proof, proof_len);
   }
 }

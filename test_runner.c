@@ -1,3 +1,4 @@
+#include "blake2b.h"
 #include "mmr.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -20,6 +21,7 @@ static int tests_run = 0;
       return r;                                                                \
   } while (0)
 
+/* helper function */
 /* return hexed hash */
 char *hex(uint8_t *hash) {
   char *buf = (char *)malloc(sizeof(char) * 128);
@@ -27,6 +29,16 @@ char *hex(uint8_t *hash) {
     sprintf(&buf[i * 2], "%02x", hash[i]);
   }
   return buf;
+}
+
+void merge_hash(uint8_t dst[HASH_SIZE], uint8_t left_hash[HASH_SIZE],
+                uint8_t right_hash[HASH_SIZE]) {
+  blake2b_state blake2b_ctx;
+  blake2b_init(&blake2b_ctx, HASH_SIZE);
+  blake2b_update(&blake2b_ctx, left_hash, HASH_SIZE);
+  blake2b_update(&blake2b_ctx, right_hash, HASH_SIZE);
+  blake2b_final(&blake2b_ctx, dst, HASH_SIZE);
+  return;
 }
 
 /* unit tests */
@@ -63,8 +75,10 @@ int merkle_proof() {
       },
   };
   uint8_t merkle_root[HASH_SIZE];
-  compute_proof_root(merkle_root, mmr_size, item, item_pos.pos, proof_items,
-                     proof_len);
+  VerifyContext ctx;
+  initialize_verify_context(&ctx, merge_hash);
+  compute_proof_root(&ctx, merkle_root, mmr_size, item, item_pos.pos,
+                     proof_items, proof_len);
   int ret = memcmp(root, merkle_root, HASH_SIZE);
   _assert(ret == 0);
   return 0;
@@ -100,9 +114,11 @@ int compute_new_root_from_proof_6() {
       0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
   };
   MMRSizePos new_item_pos = compute_pos_by_leaf_index(6);
-  compute_new_root_from_last_leaf_proof(new_root, mmr_size, item, item_pos.pos,
-                                        proof_items, proof_len, new_item,
-                                        new_item_pos);
+  VerifyContext ctx;
+  initialize_verify_context(&ctx, merge_hash);
+  compute_new_root_from_last_leaf_proof(&ctx, new_root, mmr_size, item,
+                                        item_pos.pos, proof_items, proof_len,
+                                        new_item, new_item_pos);
   int ret = memcmp(new_root, next_root, HASH_SIZE);
   _assert(ret == 0);
   return 0;
@@ -138,9 +154,11 @@ int compute_new_root_from_proof_7() {
       0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
   };
   MMRSizePos new_item_pos = compute_pos_by_leaf_index(7);
-  compute_new_root_from_last_leaf_proof(new_root, mmr_size, item, item_pos.pos,
-                                        proof_items, proof_len, new_item,
-                                        new_item_pos);
+  VerifyContext ctx;
+  initialize_verify_context(&ctx, merge_hash);
+  compute_new_root_from_last_leaf_proof(&ctx, new_root, mmr_size, item,
+                                        item_pos.pos, proof_items, proof_len,
+                                        new_item, new_item_pos);
   int ret = memcmp(new_root, next_root, HASH_SIZE);
   _assert(ret == 0);
   return 0;

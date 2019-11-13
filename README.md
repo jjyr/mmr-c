@@ -2,9 +2,9 @@
 
 Merkle mountain range in C.
 
-[reference](https://github.com/nervosnetwork/merkle-mountain-range)
+See [reference document](https://github.com/nervosnetwork/merkle-mountain-range) to learn MMR.
 
-In currently implementation only merkle proof verification is supported.
+You can check [unit tests](https://github.com/jjyr/mmr-c/blob/master/test_runner.c) to learn the usage.
 
 ## LICENSE
 

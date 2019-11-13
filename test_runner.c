@@ -75,7 +75,7 @@ int merkle_proof() {
       },
   };
   uint8_t merkle_root[HASH_SIZE];
-  VerifyContext ctx;
+  MMRVerifyContext ctx;
   initialize_verify_context(&ctx, merge_hash);
   compute_proof_root(&ctx, merkle_root, mmr_size, item, item_pos.pos,
                      proof_items, proof_len);
@@ -114,7 +114,7 @@ int compute_new_root_from_proof_6() {
       0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
   };
   MMRSizePos new_item_pos = compute_pos_by_leaf_index(6);
-  VerifyContext ctx;
+  MMRVerifyContext ctx;
   initialize_verify_context(&ctx, merge_hash);
   compute_new_root_from_last_leaf_proof(&ctx, new_root, mmr_size, item,
                                         item_pos.pos, proof_items, proof_len,
@@ -154,7 +154,7 @@ int compute_new_root_from_proof_7() {
       0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
   };
   MMRSizePos new_item_pos = compute_pos_by_leaf_index(7);
-  VerifyContext ctx;
+  MMRVerifyContext ctx;
   initialize_verify_context(&ctx, merge_hash);
   compute_new_root_from_last_leaf_proof(&ctx, new_root, mmr_size, item,
                                         item_pos.pos, proof_items, proof_len,

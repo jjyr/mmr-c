@@ -235,7 +235,50 @@ int test_mmr() {
   return 0;
 }
 
-int test_gen_new_root() { return 0; }
+int test_gen_new_root() {
+  MMRContext ctx;
+  static uint8_t tree_buf[MMR_TREE_LEAVES * MMR_TREE_LEAVES][HASH_SIZE];
+  MMRVerifyContext verify_ctx;
+  int ret = mmr_initialize_verify_context(&verify_ctx, merge_hash);
+  _assert(ret == 0);
+
+  for (uint64_t i = 1; i < MMR_TREE_LEAVES; i++) {
+    /* get old leaf merkle proof */
+    uint64_t prev_leaf_i = i - 1;
+    MMRSizePos old_leaf_pos = mmr_compute_pos_by_leaf_index(prev_leaf_i);
+    ret = mmr_initialize_context(&ctx, old_leaf_pos.mmr_size, shared_mmr_tree,
+                                 MMR_TREE_LEAVES * MMR_TREE_LEAVES, merge_hash);
+    _assert(ret == 0);
+    uint8_t proof[MMR_TREE_LEAVES][HASH_SIZE];
+    size_t proof_len = MMR_TREE_LEAVES;
+    ret = mmr_gen_proof(&ctx, proof, &proof_len, old_leaf_pos.pos);
+    _assert(ret == 0);
+
+    /* compute new root from old merkle root */
+    uint8_t leaf[HASH_SIZE];
+    memset(leaf, 0, HASH_SIZE);
+    memcpy(leaf, &prev_leaf_i, sizeof(uint64_t));
+    uint8_t new_leaf[HASH_SIZE];
+    memset(new_leaf, 0, HASH_SIZE);
+    memcpy(new_leaf, &i, sizeof(uint64_t));
+    MMRSizePos new_leaf_pos = mmr_compute_pos_by_leaf_index(i);
+    uint8_t root[HASH_SIZE];
+    mmr_compute_new_root_from_last_leaf_proof(
+        &verify_ctx, root, old_leaf_pos.mmr_size, leaf, old_leaf_pos.pos, proof,
+        proof_len, new_leaf, new_leaf_pos);
+
+    /* get new_root from mmr */
+    ret = mmr_initialize_context(&ctx, new_leaf_pos.mmr_size, shared_mmr_tree,
+                                 MMR_TREE_LEAVES * MMR_TREE_LEAVES, merge_hash);
+    _assert(ret == 0);
+    uint8_t new_root[HASH_SIZE];
+    ret = mmr_get_root(&ctx, new_root);
+    _assert(ret == 0);
+    ret = memcmp(new_root, root, HASH_SIZE);
+    _assert(ret == 0);
+  }
+  return 0;
+}
 
 /* end unit tests */
 
@@ -250,6 +293,7 @@ int all_tests() {
   _verify(test_compute_new_root_from_proof_7);
   _verify(test_leaf_index_to_pos);
   _verify(test_mmr);
+  _verify(test_gen_new_root);
 
   return 0;
 }

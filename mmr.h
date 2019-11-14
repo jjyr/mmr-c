@@ -32,90 +32,96 @@ typedef struct MMRVerifyContext {
   void (*merge)(uint8_t *dst, uint8_t *right, uint8_t *left);
 } MMRVerifyContext;
 
-typedef struct Peaks {
-  uint64_t *peaks;
-  size_t len;
-} Peaks;
-
-typedef struct HeightPos {
-  uint32_t height;
-  uint64_t pos;
-} HeightPos;
-
 typedef struct MMRSizePos {
   uint64_t mmr_size;
   uint64_t pos;
 } MMRSizePos;
 
+typedef struct MMRPeaks {
+  uint64_t *peaks;
+  size_t len;
+} MMRPeaks;
+
+typedef struct MMRHeightPos {
+  uint32_t height;
+  uint64_t pos;
+} MMRHeightPos;
+
 /* helper functions */
 
-uint64_t parent_offset(uint32_t height) { return 2 << height; }
+/* calculate offset of parent position by height */
+static uint64_t parent_offset(uint32_t height) { return 2 << height; }
 
-uint64_t sibling_offset(uint32_t height) { return (2 << height) - 1; }
+/* calculate offset of sibling position by height */
+static uint64_t sibling_offset(uint32_t height) { return (2 << height) - 1; }
 
-/* return height 0 pos 0 if can't find a right peak */
-HeightPos get_right_peak(uint32_t height, uint64_t pos, uint64_t mmr_size) {
+/* get right peak from a peak,
+ * return height 0 pos 0 if can't find a right peak
+ */
+static MMRHeightPos get_right_peak(MMRHeightPos peak_pos, uint64_t mmr_size) {
+  uint64_t pos = peak_pos.pos;
+  uint32_t height = peak_pos.height;
   // move to right sibling pos
   pos += sibling_offset(height);
   // loop until we find a pos in mmr
   while (pos > mmr_size - 1) {
     if (height == 0) {
-      HeightPos ret = {0, 0};
+      MMRHeightPos ret = {0, 0};
       return ret;
     }
     // move to left child
     pos -= parent_offset(height - 1);
     height -= 1;
   }
-  HeightPos peak = {height, pos};
+  MMRHeightPos peak = {height, pos};
   return peak;
 }
 
-uint64_t peak_pos_by_height(uint32_t height) { return (1 << (height + 1)) - 2; }
+static uint64_t left_peak_pos_by_height(uint32_t height) {
+  return (1 << (height + 1)) - 2;
+}
 
-HeightPos left_peak_height_pos(uint64_t mmr_size) {
+static MMRHeightPos left_peak_height_pos(uint64_t mmr_size) {
   uint32_t height = 1;
   uint64_t prev_pos = 0;
-  uint64_t pos = peak_pos_by_height(height);
+  uint64_t pos = left_peak_pos_by_height(height);
   while (pos < mmr_size) {
     height += 1;
     prev_pos = pos;
-    pos = peak_pos_by_height(height);
+    pos = left_peak_pos_by_height(height);
   }
-  HeightPos p = {height - 1, prev_pos};
+  MMRHeightPos p = {height - 1, prev_pos};
   return p;
 }
 
 /* peaks_buf should at least equals to left_peak.height, to make sure we have
  * enough buf to store peaks.
  */
-Peaks get_peaks(uint64_t *peaks_buf, HeightPos left_peak, uint64_t mmr_size) {
+static MMRPeaks get_peaks(uint64_t peaks_buf[HASH_SIZE], MMRHeightPos left_peak,
+                          uint64_t mmr_size) {
   /* After a little thought we can figure out the number of peaks will never
    * greater than MMR height
    * https://github.com/nervosnetwork/merkle-mountain-range#construct
    */
-  uint32_t height = left_peak.height;
-  uint64_t pos = left_peak.pos;
   size_t i = 0;
-  peaks_buf[i++] = pos;
-  while (height > 0) {
-    HeightPos peak = get_right_peak(height, pos, mmr_size);
+  peaks_buf[i++] = left_peak.pos;
+  while (left_peak.height > 0) {
+    MMRHeightPos right_peak = get_right_peak(left_peak, mmr_size);
     /* no more right peak */
-    if (peak.height == 0 && peak.pos == 0) {
+    if (right_peak.height == 0 && right_peak.pos == 0) {
       break;
     }
-    height = peak.height;
-    pos = peak.pos;
-    peaks_buf[i++] = pos;
+    left_peak = right_peak;
+    peaks_buf[i++] = left_peak.pos;
   }
-  struct Peaks peaks = {peaks_buf, i};
+  struct MMRPeaks peaks = {peaks_buf, i};
   return peaks;
 }
 
 /* binary search, arr must be a sorted array
  * return -1 if binary search failed, otherwise return index
  */
-int binary_search(uint64_t *arr, size_t len, uint64_t target) {
+static int binary_search(uint64_t *arr, size_t len, uint64_t target) {
   if (len == 0) {
     return -1;
   }
@@ -140,7 +146,7 @@ int binary_search(uint64_t *arr, size_t len, uint64_t target) {
 }
 
 /* return number of zeros */
-size_t count_zeros(uint64_t n, int only_count_leading) {
+static size_t count_zeros(uint64_t n, int only_count_leading) {
   size_t num_zeros = 0;
 
   for (int i = 63; i >= 0; --i) {
@@ -153,17 +159,17 @@ size_t count_zeros(uint64_t n, int only_count_leading) {
   return num_zeros;
 }
 
-int is_all_one_bits(uint64_t n) {
+static int is_all_one_bits(uint64_t n) {
   return n != 0 && count_zeros(n, 0) == count_zeros(n, 1);
 }
 
-uint64_t jump_left(uint64_t pos) {
+static uint64_t jump_left(uint64_t pos) {
   size_t bit_length = 64 - count_zeros(pos, 1);
   size_t most_significant_bits = 1 << (bit_length - 1);
   return pos - (most_significant_bits - 1);
 }
 
-uint32_t pos_height_in_tree(uint64_t pos) {
+static uint32_t pos_height_in_tree(uint64_t pos) {
   pos += 1;
 
   while (!is_all_one_bits(pos)) {
@@ -180,45 +186,8 @@ static uint64_t simple_log2(uint64_t n) {
   return res;
 }
 
-MMRSizePos compute_pos_by_leaf_index(uint64_t index) {
-  if (index == 0) {
-    MMRSizePos ret = {0, 0};
-    return ret;
-  }
-  // leaf_count
-  uint64_t leaves = index + 1;
-  uint64_t tree_node_count = 0;
-  uint32_t height = 0;
-  uint64_t mmr_size = 0;
-  while (leaves > 1) {
-    // get heighest peak height
-    height = simple_log2(leaves);
-    // calculate leaves in peak
-    uint64_t peak_leaves = (uint32_t)1 << height;
-    // heighest positon
-    uint64_t sub_tree_node_count = peak_pos_by_height(height) + 1;
-    tree_node_count += sub_tree_node_count;
-    leaves -= peak_leaves;
-    mmr_size += (peak_leaves * 2 - 1);
-  }
-  // two leaves can construct a new peak, the only valid number of leaves is 0
-  // or 1.
-  assert(leaves == 0 || leaves == 1);
-  if (leaves == 1) {
-    // add one pos for remain leaf
-    // equals to `tree_node_count - 1 + 1`
-    mmr_size += 1;
-    MMRSizePos ret = {mmr_size, tree_node_count};
-    return ret;
-  } else {
-    uint64_t pos = tree_node_count - 1;
-    MMRSizePos ret = {mmr_size, pos - height};
-    return ret;
-  }
-}
-
-static int bag_rhs_peaks(MMRContext *ctx, uint8_t *dst, uint64_t skip_pos,
-                         Peaks *peaks) {
+static int bag_rhs_peaks(MMRContext *ctx, uint8_t dst[HASH_SIZE],
+                         uint64_t skip_pos, MMRPeaks *peaks) {
   uint8_t peaks_elems[peaks->len][HASH_SIZE];
   size_t len = 0;
   for (int i = 0; i < peaks->len; i++) {
@@ -243,7 +212,7 @@ static int bag_rhs_peaks(MMRContext *ctx, uint8_t *dst, uint64_t skip_pos,
 }
 
 static size_t compute_peak_root(MMRVerifyContext *ctx,
-                                uint8_t peak_hash[HASH_SIZE], Peaks peaks,
+                                uint8_t peak_hash[HASH_SIZE], MMRPeaks peaks,
                                 uint64_t *pos, uint8_t proof[][HASH_SIZE],
                                 size_t proof_len) {
   size_t i = 0;
@@ -276,27 +245,79 @@ static size_t compute_peak_root(MMRVerifyContext *ctx,
 
 /* MMR API */
 
-/* Initialize MMRContext */
-int initialize_context(MMRContext *ctx, uint64_t mmr_size, uint8_t **tree_buf,
-                       uint64_t tree_buf_size,
-                       void(merge)(uint8_t *dst, uint8_t *right,
-                                   uint8_t *left)) {
+/* calculate MMRSizePos from leaf index,
+ * mmr_size is the size of mmr when index is the last leaf,
+ * pos is the position of leaf in internal mmr.
+ */
+MMRSizePos mmr_compute_pos_by_leaf_index(uint64_t index) {
+  if (index == 0) {
+    MMRSizePos ret = {0, 0};
+    return ret;
+  }
+  // leaf_count
+  uint64_t leaves = index + 1;
+  uint64_t tree_node_count = 0;
+  uint32_t height = 0;
+  uint64_t mmr_size = 0;
+  while (leaves > 1) {
+    // get heighest peak height
+    height = simple_log2(leaves);
+    // calculate leaves in peak
+    uint64_t peak_leaves = (uint32_t)1 << height;
+    // heighest positon
+    uint64_t sub_tree_node_count = left_peak_pos_by_height(height) + 1;
+    tree_node_count += sub_tree_node_count;
+    leaves -= peak_leaves;
+    mmr_size += (peak_leaves * 2 - 1);
+  }
+  // two leaves can construct a new peak, the only valid number of leaves is 0
+  // or 1.
+  assert(leaves == 0 || leaves == 1);
+  if (leaves == 1) {
+    // add one pos for remain leaf
+    // equals to `tree_node_count - 1 + 1`
+    mmr_size += 1;
+    MMRSizePos ret = {mmr_size, tree_node_count};
+    return ret;
+  } else {
+    uint64_t pos = tree_node_count - 1;
+    MMRSizePos ret = {mmr_size, pos - height};
+    return ret;
+  }
+}
+
+/* Initialize MMRContext
+ * mmr_size: the current size of mmr, for a empty MMR it's 0
+ * tree_buf: an array of 32bytes buf, used to store mmr internal nodes
+ * tree_buf_size: the size of tree_buf, mmr_size will never greater than
+ * tree_buf_size.
+ * merge: a function to merge left node hash and right node hash
+ */
+int mmr_initialize_context(MMRContext *ctx, uint64_t mmr_size,
+                           uint8_t tree_buf[][HASH_SIZE],
+                           uint64_t tree_buf_size,
+                           void(merge)(uint8_t dst[HASH_SIZE],
+                                       uint8_t right[HASH_SIZE],
+                                       uint8_t left[HASH_SIZE])) {
   if (mmr_size > tree_buf_size) {
     return -1;
   }
   ctx->mmr_size = mmr_size;
-  ctx->tree_buf = tree_buf;
+  ctx->tree_buf = (uint8_t **)tree_buf;
   ctx->tree_buf_size = tree_buf_size;
   ctx->merge = merge;
   return 0;
 }
 
-int push(MMRContext *ctx, uint8_t *elem) {
+/* push a leaf into mmr
+ * leaf: a 32 bytes hash represented leaf
+ */
+int mmr_push(MMRContext *ctx, uint8_t leaf[HASH_SIZE]) {
   uint64_t pos = ctx->mmr_size;
   if (pos >= ctx->tree_buf_size) {
     return -1;
   }
-  ctx->tree_buf[pos] = elem;
+  ctx->tree_buf[pos] = leaf;
   uint32_t height = 0;
 
   uint64_t i = pos;
@@ -316,21 +337,31 @@ int push(MMRContext *ctx, uint8_t *elem) {
   return 0;
 }
 
-int get_root(MMRContext *ctx, uint8_t *dst) {
+/* get merkle root,
+ * return -1 if mmr_size is 0
+ * dst: a 32 bytes buf to receive merkle root
+ */
+int mmr_get_root(MMRContext *ctx, uint8_t dst[HASH_SIZE]) {
   if (ctx->mmr_size == 0) {
     return -1;
   } else if (ctx->mmr_size == 1) {
     memcpy(dst, ctx->tree_buf[0], HASH_SIZE);
     return 0;
   }
-  HeightPos left_peak = left_peak_height_pos(ctx->mmr_size);
+  MMRHeightPos left_peak = left_peak_height_pos(ctx->mmr_size);
   uint64_t peaks_buf[left_peak.height];
-  Peaks peaks = get_peaks(peaks_buf, left_peak, ctx->mmr_size);
+  MMRPeaks peaks = get_peaks(peaks_buf, left_peak, ctx->mmr_size);
   return bag_rhs_peaks(ctx, dst, 0, &peaks);
 }
 
-int gen_proof(MMRContext *ctx, uint8_t **proof, size_t *proof_max_len,
-              uint64_t pos) {
+/* generate merkle proof
+ * return -1 if proof length is not enough to receive the proof
+ * proof: a array of 32 bytes buf to receive merkle proof
+ * proof_max_len: length of proof buf, will be set to the actual len of proof.
+ * pos: position of leaf
+ */
+int mmr_gen_proof(MMRContext *ctx, uint8_t proof[][HASH_SIZE],
+                  size_t *proof_max_len, uint64_t pos) {
   uint32_t height = 0;
   size_t proof_len = 0;
   while (pos < ctx->mmr_size) {
@@ -357,9 +388,9 @@ int gen_proof(MMRContext *ctx, uint8_t **proof, size_t *proof_max_len,
     height++;
   }
   /* gen merkle proof of the peak */
-  HeightPos left_peak = left_peak_height_pos(ctx->mmr_size);
+  MMRHeightPos left_peak = left_peak_height_pos(ctx->mmr_size);
   uint64_t peaks_buf[left_peak.height];
-  Peaks peaks = get_peaks(peaks_buf, left_peak, ctx->mmr_size);
+  MMRPeaks peaks = get_peaks(peaks_buf, left_peak, ctx->mmr_size);
   if (proof_len >= *proof_max_len) {
     return -1;
   }
@@ -379,22 +410,32 @@ int gen_proof(MMRContext *ctx, uint8_t **proof, size_t *proof_max_len,
   return 0;
 }
 
-/* Initialize MMRVerifyContext */
-int initialize_verify_context(MMRVerifyContext *ctx,
-                              void(merge)(uint8_t *dst, uint8_t *right,
-                                          uint8_t *left)) {
+/* Initialize MMRVerifyContext
+ * merge: a function to merge left node hash and right node hash
+ */
+int mmr_initialize_verify_context(MMRVerifyContext *ctx,
+                                  void(merge)(uint8_t dst[HASH_SIZE],
+                                              uint8_t right[HASH_SIZE],
+                                              uint8_t left[HASH_SIZE])) {
   ctx->merge = merge;
   return 0;
 }
 
-/* compute root from merkle proof */
-void compute_proof_root(MMRVerifyContext *ctx, uint8_t root_hash[HASH_SIZE],
-                        uint64_t mmr_size, uint8_t leaf_hash[HASH_SIZE],
-                        uint64_t pos, uint8_t proof[][HASH_SIZE],
-                        size_t proof_len) {
-  HeightPos left_peak = left_peak_height_pos(mmr_size);
+/* compute root from merkle proof
+ * root_hash: a 32 bytes buf to receive root hash
+ * mmr_size: size of the mmr to generate this proof
+ * leaf_hash: 32 bytes hash of leaf
+ * pos: position of the leaf
+ * proof: an array of 32 bytes hash
+ * proof_len: length of proof
+ */
+void mmr_compute_proof_root(MMRVerifyContext *ctx, uint8_t root_hash[HASH_SIZE],
+                            uint64_t mmr_size, uint8_t leaf_hash[HASH_SIZE],
+                            uint64_t pos, uint8_t proof[][HASH_SIZE],
+                            size_t proof_len) {
+  MMRHeightPos left_peak = left_peak_height_pos(mmr_size);
   uint64_t peaks_buf[left_peak.height];
-  struct Peaks peaks = get_peaks(peaks_buf, left_peak, mmr_size);
+  struct MMRPeaks peaks = get_peaks(peaks_buf, left_peak, mmr_size);
   // start from leaf_hash
   memcpy(root_hash, leaf_hash, HASH_SIZE);
   // calculate peak's merkle root
@@ -419,12 +460,20 @@ void compute_proof_root(MMRVerifyContext *ctx, uint8_t root_hash[HASH_SIZE],
 }
 
 /* compute a new root from last leaf's merkle proof
- * we got the merkle proof of leaf n, and we want calculate merkle root of n + 1
- * leaves from this.
+ * from merkle proof of leaf n to calculate merkle root of n + 1 leaves.
  * this is kinda triky, but by observe the MMR construction graph we know it is
  * possible. https://github.com/jjyr/merkle-mountain-range#construct
+ *
+ * root_hash: a 32 bytes buf to receive root hash
+ * mmr_size: size of the mmr to generate this proof
+ * leaf_hash: 32 bytes hash of leaf
+ * pos: position of the leaf
+ * proof: an array of 32 bytes hash
+ * proof_len: length of proof
+ * new_leaf_hash: 32 bytes hash of the next leaf
+ * new_leaf_pos: the position and mmr_size of the new leaf.
  */
-void compute_new_root_from_last_leaf_proof(
+void mmr_compute_new_root_from_last_leaf_proof(
     MMRVerifyContext *ctx, uint8_t root_hash[HASH_SIZE], uint64_t mmr_size,
     uint8_t leaf_hash[HASH_SIZE], uint64_t leaf_pos, uint8_t proof[][HASH_SIZE],
     size_t proof_len, uint8_t new_leaf_hash[HASH_SIZE],
@@ -439,17 +488,17 @@ void compute_new_root_from_last_leaf_proof(
     for (int i = 0; i < proof_len; i++) {
       memcpy(new_proof[i + 1], proof[i], HASH_SIZE);
     }
-    compute_proof_root(ctx, root_hash, new_leaf_pos.mmr_size, new_leaf_hash,
-                       new_leaf_pos.pos, new_proof, proof_len + 1);
+    mmr_compute_proof_root(ctx, root_hash, new_leaf_pos.mmr_size, new_leaf_hash,
+                           new_leaf_pos.pos, new_proof, proof_len + 1);
   } else {
     /* new leaf on left branch
      * 1. calculate peak's root from last leaf.
      * 2. use peak's root and remain proof as new_proof, then compute_proof_root
      */
     assert(mmr_size + 1 == new_leaf_pos.mmr_size);
-    HeightPos left_peak = left_peak_height_pos(mmr_size);
+    MMRHeightPos left_peak = left_peak_height_pos(mmr_size);
     uint64_t peaks_buf[left_peak.height];
-    struct Peaks peaks = get_peaks(peaks_buf, left_peak, mmr_size);
+    struct MMRPeaks peaks = get_peaks(peaks_buf, left_peak, mmr_size);
     // start from leaf_hash
     memcpy(root_hash, leaf_hash, HASH_SIZE);
     size_t i =
@@ -460,8 +509,8 @@ void compute_new_root_from_last_leaf_proof(
       memcpy(proof[j - i + 1], proof[j], HASH_SIZE);
     }
     proof_len = proof_len + 1 - i;
-    compute_proof_root(ctx, root_hash, new_leaf_pos.mmr_size, new_leaf_hash,
-                       new_leaf_pos.pos, proof, proof_len);
+    mmr_compute_proof_root(ctx, root_hash, new_leaf_pos.mmr_size, new_leaf_hash,
+                           new_leaf_pos.pos, proof, proof_len);
   }
 }
 

@@ -3,7 +3,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+#define MMR_TREE_LEAVES 1000
+
 static int tests_run = 0;
+static uint8_t shared_mmr_tree[MMR_TREE_LEAVES * MMR_TREE_LEAVES][HASH_SIZE];
+static uint64_t shared_mmr_size = 0;
 
 #define FAIL() printf("\nfailure in %s() line %d\n", __func__, __LINE__)
 #define _assert(test)                                                          \
@@ -41,8 +45,28 @@ void merge_hash(uint8_t dst[HASH_SIZE], uint8_t left_hash[HASH_SIZE],
   return;
 }
 
+/* initialize shared mmr tree */
+int initialize_shared_tree() {
+  MMRContext ctx;
+  int ret = mmr_initialize_context(
+      &ctx, 0, shared_mmr_tree, MMR_TREE_LEAVES * MMR_TREE_LEAVES, merge_hash);
+  if (ret != 0) {
+    return -1;
+  }
+  for (uint64_t i = 0; i < MMR_TREE_LEAVES; i++) {
+    uint8_t leaf[HASH_SIZE];
+    memset(leaf, 0, HASH_SIZE);
+    memcpy(leaf, &i, sizeof(uint64_t));
+    if (mmr_push(&ctx, leaf) != 0) {
+      return -2;
+    }
+  }
+  shared_mmr_size = ctx.mmr_size;
+  return 0;
+}
+
 /* unit tests */
-int merkle_proof() {
+int test_merkle_proof() {
   uint8_t item[] = {
       5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
       0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -84,7 +108,7 @@ int merkle_proof() {
   return 0;
 }
 
-int compute_new_root_from_proof_6() {
+int test_compute_new_root_from_proof_6() {
   uint8_t item[] = {
       5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
       0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -124,7 +148,7 @@ int compute_new_root_from_proof_6() {
   return 0;
 }
 
-int compute_new_root_from_proof_7() {
+int test_compute_new_root_from_proof_7() {
   uint8_t item[] = {
       6, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
       0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -163,12 +187,70 @@ int compute_new_root_from_proof_7() {
   _assert(ret == 0);
   return 0;
 }
+
+int test_leaf_index_to_pos() {
+  MMRSizePos pos, expected;
+
+  pos = mmr_compute_pos_by_leaf_index(0);
+  expected = (MMRSizePos){1, 0};
+  _assert(memcmp(&pos, &expected, sizeof(MMRSizePos)) == 0);
+
+  pos = mmr_compute_pos_by_leaf_index(1);
+  expected = (MMRSizePos){3, 1};
+  _assert(memcmp(&pos, &expected, sizeof(MMRSizePos)) == 0);
+
+  pos = mmr_compute_pos_by_leaf_index(2);
+  expected = (MMRSizePos){4, 3};
+  _assert(memcmp(&pos, &expected, sizeof(MMRSizePos)) == 0);
+  return 0;
+}
+
+int test_mmr() {
+  MMRContext ctx;
+  int ret =
+      mmr_initialize_context(&ctx, shared_mmr_size, shared_mmr_tree,
+                             MMR_TREE_LEAVES * MMR_TREE_LEAVES, merge_hash);
+  _assert(ret == 0);
+  MMRVerifyContext verify_ctx;
+  ret = mmr_initialize_verify_context(&verify_ctx, merge_hash);
+  _assert(ret == 0);
+  uint8_t root[HASH_SIZE];
+  ret = mmr_get_root(&ctx, root);
+  _assert(ret == 0);
+  for (uint64_t i = 0; i < MMR_TREE_LEAVES; i++) {
+    uint8_t proof[MMR_TREE_LEAVES][HASH_SIZE];
+    size_t proof_len = MMR_TREE_LEAVES;
+    uint8_t root2[HASH_SIZE];
+    MMRSizePos pos = mmr_compute_pos_by_leaf_index(i);
+    ret = mmr_gen_proof(&ctx, proof, &proof_len, pos.pos);
+    _assert(ret == 0);
+    uint8_t leaf[HASH_SIZE];
+    memset(leaf, 0, HASH_SIZE);
+    memcpy(leaf, &i, sizeof(uint64_t));
+    mmr_compute_proof_root(&verify_ctx, root2, shared_mmr_size, leaf, pos.pos,
+                           proof, proof_len);
+    ret = memcmp(root, root2, HASH_SIZE);
+    _assert(ret == 0);
+  }
+  return 0;
+}
+
+int test_gen_new_root() { return 0; }
+
 /* end unit tests */
 
 int all_tests() {
-  _verify(merkle_proof);
-  _verify(compute_new_root_from_proof_6);
-  _verify(compute_new_root_from_proof_7);
+  int ret = initialize_shared_tree();
+  if (ret != 0) {
+    FAIL();
+    return ret;
+  }
+  _verify(test_merkle_proof);
+  _verify(test_compute_new_root_from_proof_6);
+  _verify(test_compute_new_root_from_proof_7);
+  _verify(test_leaf_index_to_pos);
+  _verify(test_mmr);
+
   return 0;
 }
 

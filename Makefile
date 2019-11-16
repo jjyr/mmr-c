@@ -1,5 +1,5 @@
 CC := cc
-CFLAGS := -Itest_deps
+CFLAGS := -O3 -Itest_deps
 
 test: test_runner
 	./test_runner
@@ -8,4 +8,8 @@ test_runner: test_runner.c mmr.o
 	$(CC) $(CFLAGS) -o $@ $^
 
 mmr.o: mmr.c
-	$(CC) -c -o $@ $<
+	$(CC) $(CFLAGS) -c -o $@ $<
+
+clean:
+	rm mmr.o
+	rm test_runner

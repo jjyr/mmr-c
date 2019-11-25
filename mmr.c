@@ -446,6 +446,10 @@ void mmr_compute_new_root_from_last_leaf_proof(
     uint8_t leaf_hash[HASH_SIZE], uint64_t leaf_pos, uint8_t proof[][HASH_SIZE],
     size_t proof_len, uint8_t new_leaf_hash[HASH_SIZE],
     MMRSizePos new_leaf_pos) {
+  if (mmr_size == 0) {
+    memcpy(root_hash, new_leaf_hash, HASH_SIZE);
+    return;
+  }
   uint32_t pos_height = pos_height_in_tree(new_leaf_pos.pos);
   uint32_t next_height = pos_height_in_tree(new_leaf_pos.pos + 1);
   if (next_height > pos_height) {

@@ -280,6 +280,33 @@ int test_gen_new_root() {
   return 0;
 }
 
+int test_empty_proof() {
+  /* merkle proof with empty proof */
+  uint8_t item[] = {
+      5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+      0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+  };
+  MMRSizePos item_pos = mmr_compute_pos_by_leaf_index(0);
+  uint64_t mmr_size = 0;
+  uint64_t proof_len = 0;
+  uint8_t proof_items[0][HASH_SIZE];
+  uint8_t merkle_root[HASH_SIZE];
+  MMRVerifyContext ctx;
+  mmr_initialize_verify_context(&ctx, merge_hash);
+  mmr_compute_proof_root(&ctx, merkle_root, mmr_size, item, item_pos.pos,
+                         proof_items, proof_len);
+  int ret = memcmp(item, merkle_root, HASH_SIZE);
+  _assert(ret == 0);
+
+  /* new root merkle proof with empty proof */
+  mmr_compute_new_root_from_last_leaf_proof(&ctx, merkle_root, mmr_size, item,
+                                            item_pos.pos, proof_items,
+                                            proof_len, item, item_pos);
+  ret = memcmp(item, merkle_root, HASH_SIZE);
+  _assert(ret == 0);
+  return 0;
+}
+
 /* end unit tests */
 
 int all_tests() {
@@ -294,6 +321,7 @@ int all_tests() {
   _verify(test_leaf_index_to_pos);
   _verify(test_mmr);
   _verify(test_gen_new_root);
+  _verify(test_empty_proof);
 
   return 0;
 }
